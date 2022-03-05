@@ -67,31 +67,6 @@ fn check_wordle(guess: &String, word: &String) -> Vec<u8> {
     }
     result
 }
-
-fn minimum_weight(weights: &HashMap<String, u64>) -> String {
-    let mut min: u64 = 100000000000;
-    let mut min_word = String::new();
-    for (k, v) in weights {
-        if *v < min {
-            min = *v;
-            min_word = k.to_string();
-        }
-    }
-    min_word
-}
-
-fn maximum_weight(weights: &HashMap<String, u64>) -> String {
-    let mut max: u64 = 0;
-    let mut max_word = String::new();
-    for (k, v) in weights {
-        if *v > max {
-            max = *v;
-            max_word = k.to_string();
-        }
-    }
-    max_word
-}
-
 fn match_result(result: Vec<u8>, r: &String) -> bool {
     let mut pos = 0;
     for c in r.chars() {
@@ -124,7 +99,7 @@ fn delete_words(dbcon: &Connection, words: &Vec<String>) {
         }
         c += 1;
     }
-    println!("wordlist:{}", wordlist);
+    //    println!("wordlist:{}", wordlist);
     let st = format!("delete from word_weight where word in ({});", wordlist);
     match dbcon.execute(&st, []) {
         Err(e) => panic!("execute {}", e),
@@ -168,6 +143,12 @@ fn get_candidate(
     candidate
 }
 
+fn sort_hash_by_value(h: &HashMap<String, u64>) -> Vec<(&String, &u64)> {
+    let mut v: Vec<(&String, &u64)> = h.iter().collect();
+    v.sort_by(|a, b| a.1.cmp(&b.1));
+    v
+}
+
 fn main() {
     let db_name: String = "Words".to_string();
     let db_extention: String = ".db".to_string();
@@ -204,7 +185,7 @@ fn main() {
         }
     }
     let db_filename = format!("{}{}{}", db_name, length, db_extention);
-    println!("DB file {}", db_filename);
+    //    println!("DB file {}", db_filename);
     let dbcon = connect_db(db_filename);
     delete_words(&dbcon, &exclude_list);
     let word_weight = match get_word_weight(&dbcon) {
@@ -214,18 +195,14 @@ fn main() {
     let candidate = get_candidate(&word_weight, &result_list);
     if candidate.len() > 0 {
         println!("candidate {}", candidate.len());
-        let min = minimum_weight(&candidate);
-        println!(
-            "Minimum word : {} = {}",
-            min,
-            candidate.get(&min).expect("Notfound")
-        );
-        let max = maximum_weight(&candidate);
-        println!(
-            "Maximum word : {} = {}",
-            max,
-            candidate.get(&max).expect("Notfound")
-        );
+        let v = sort_hash_by_value(&candidate);
+        if candidate.len() < 20 {
+            for h in &v {
+                println!("{}:{}", h.0, h.1);
+            }
+        }
+        println!("Minimum word : {} : {}", v[0].0, v[0].1);
+        println!("Maximum word : {} : {}", v[v.len() - 1].0, v[v.len() - 1].1);
     } else {
         println!("No words matches");
     }
