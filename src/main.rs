@@ -1,6 +1,8 @@
 use regex::Regex;
-use rusqlite::{Connection, Result};
+use rusqlite::Connection;
+use std::error;
 use std::{collections::HashMap, env};
+type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
 const MISS: u8 = 0;
 const BLOW: u8 = 1;
@@ -67,6 +69,20 @@ fn check_wordle(guess: &String, word: &String) -> Vec<u8> {
     }
     result
 }
+
+#[test]
+fn t_match_result() {
+    let t: Vec<u8> = vec![MISS, MISS, MISS, MISS, MISS];
+    assert!(match_result(t, &"00000".to_string()), "00000");
+    let t: Vec<u8> = vec![HIT, HIT, HIT, HIT, HIT];
+    assert!(match_result(t, &"22222".to_string()), "22222");
+    let t: Vec<u8> = vec![BLOW, BLOW, BLOW, BLOW, BLOW];
+    assert!(match_result(t, &"11111".to_string()), "11111");
+    let t: Vec<u8> = vec![MISS, MISS, MISS, MISS, MISS];
+    assert!(match_result(t, &"10000".to_string()) == false, "10000");
+    let t: Vec<u8> = vec![BLOW, MISS, HIT, BLOW, MISS];
+    assert!(match_result(t, &"10210".to_string()) == true, "10210");
+}
 fn match_result(result: Vec<u8>, r: &String) -> bool {
     let mut pos = 0;
     for c in r.chars() {
@@ -78,17 +94,7 @@ fn match_result(result: Vec<u8>, r: &String) -> bool {
     true
 }
 
-fn connect_db(db_name: String) -> Connection {
-    let dbcon = match Connection::open(db_name) {
-        Ok(c) => c,
-        Err(e) => {
-            panic!("DB Error {}", e);
-        }
-    };
-    dbcon
-}
-
-fn delete_words(dbcon: &Connection, words: &Vec<String>) {
+fn delete_words(dbcon: &Connection, words: &Vec<String>) -> Result<()> {
     let mut wordlist = "".to_string();
     let mut c = 0;
     for w in words {
@@ -99,12 +105,9 @@ fn delete_words(dbcon: &Connection, words: &Vec<String>) {
         }
         c += 1;
     }
-    //    println!("wordlist:{}", wordlist);
     let st = format!("delete from word_weight where word in ({});", wordlist);
-    match dbcon.execute(&st, []) {
-        Err(e) => panic!("execute {}", e),
-        _ => (),
-    };
+    dbcon.execute(&st, [])?;
+    Ok(())
 }
 
 fn get_word_weight(dbcon: &Connection) -> Result<HashMap<String, u64>> {
@@ -149,7 +152,7 @@ fn sort_hash_by_value(h: &HashMap<String, u64>) -> Vec<(&String, &u64)> {
     v
 }
 
-fn main() {
+fn main() -> Result<()> {
     let db_name: String = "Words".to_string();
     let db_extention: String = ".db".to_string();
     let args: Vec<String> = env::args().collect();
@@ -177,21 +180,14 @@ fn main() {
                 continue;
             };
             for cap in option_pattern.captures_iter(&r) {
-                length = match cap[1].parse::<usize>() {
-                    Ok(v) => v,
-                    Err(_) => return,
-                }
+                length = cap[1].parse::<usize>()?;
             }
         }
     }
     let db_filename = format!("{}{}{}", db_name, length, db_extention);
-    //    println!("DB file {}", db_filename);
-    let dbcon = connect_db(db_filename);
-    delete_words(&dbcon, &exclude_list);
-    let word_weight = match get_word_weight(&dbcon) {
-        Ok(w) => w,
-        Err(e) => panic!("get_word_weight {}", e),
-    };
+    let dbcon = Connection::open(db_filename)?;
+    delete_words(&dbcon, &exclude_list)?;
+    let word_weight = get_word_weight(&dbcon)?;
     let candidate = get_candidate(&word_weight, &result_list);
     if candidate.len() > 0 {
         println!("candidate {}", candidate.len());
@@ -206,4 +202,5 @@ fn main() {
     } else {
         println!("No words matches");
     }
+    Ok(())
 }
